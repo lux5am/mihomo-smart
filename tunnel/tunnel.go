@@ -484,7 +484,12 @@ func handleUDPConn(packet C.PacketAdapter) {
 			dialMetadata.SmartTarget = metadata.SmartTarget
 			dialMetadata.SmartBlock = metadata.SmartBlock
 
-			pc := statistic.NewUDPTracker(rawPc, statistic.DefaultManager, dialMetadata, rule, 0, 0, true)
+			var pc C.PacketConn
+			if proxy.Type() != C.Dns {
+				pc = statistic.NewUDPTracker(rawPc, statistic.DefaultManager, dialMetadata, rule, 0, 0, true)
+			} else {
+				pc = rawPc
+			}
 
 			sender.AddMapping(originMetadata, dialMetadata)
 			oAddrPort := dialMetadata.AddrPort()
@@ -620,7 +625,9 @@ func handleTCPConn(connCtx C.ConnContext) {
 	}
 	logMetadata(metadata, rule, remoteConn)
 
-	remoteConn = statistic.NewTCPTracker(remoteConn, statistic.DefaultManager, metadata, rule, int64(peekLen), 0, true)
+	if proxy.Type() != C.Dns {
+		remoteConn = statistic.NewTCPTracker(remoteConn, statistic.DefaultManager, metadata, rule, int64(peekLen), 0, true)
+	}
 	defer func(remoteConn C.Conn) {
 		_ = remoteConn.Close()
 	}(remoteConn)
