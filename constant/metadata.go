@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"sync/atomic"
 )
 
 // SOCKS address types as defined in RFC 1928 section 5.
@@ -44,6 +45,8 @@ const (
 	TRUSTTUNNEL
 	INNER
 )
+
+var SocksPreferHost atomic.Bool
 
 type AddrType byte
 
@@ -251,6 +254,18 @@ func (m *Metadata) SourceValid() bool {
 }
 
 func (m *Metadata) AddrType() AddrType {
+	if !SocksPreferHost.Load() {
+		switch true {
+		case m.DstIP.Is4():
+			return AtypIPv4
+		case m.DstIP.Is6():
+			return AtypIPv6
+		case m.Host != "" || !m.DstIP.IsValid():
+			return AtypDomainName
+		default:
+			return AtypIPv6
+		}
+	}
 	switch true {
 	case m.Host != "" || !m.DstIP.IsValid():
 		return AtypDomainName
@@ -302,6 +317,15 @@ func (m *Metadata) UDPAddr() *net.UDPAddr {
 }
 
 func (m *Metadata) String() string {
+	if !SocksPreferHost.Load() {
+		if m.DstIP.IsValid() {
+			return m.DstIP.String()
+		} else if m.Host != "" {
+			return m.Host
+		} else {
+			return "<nil>"
+		}
+	}
 	if m.Host != "" {
 		return m.Host
 	} else if m.DstIP.IsValid() {
