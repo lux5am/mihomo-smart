@@ -15,6 +15,7 @@ func keepAliveConfig() net.KeepAliveConfig {
 		Enable:   true,
 		Idle:     KeepAliveIdle(),
 		Interval: KeepAliveInterval(),
+		Count:    KeepAliveCount(),
 	}
 	if !SupportTCPKeepAliveCount() {
 		// it's recommended to set both Idle and Interval to non-negative values in conjunction with a -1

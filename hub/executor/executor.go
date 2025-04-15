@@ -180,6 +180,7 @@ func GetGeneral() *config.General {
 		ETagSupport:        resource.ETag(),
 		KeepAliveInterval:  int(keepalive.KeepAliveInterval() / time.Second),
 		KeepAliveIdle:      int(keepalive.KeepAliveIdle() / time.Second),
+		KeepAliveCount:     keepalive.KeepAliveCount(),
 		DisableKeepAlive:   keepalive.DisableKeepAlive(),
 		LgbmAutoUpdate:     updater.LgbmAutoUpdate(),
 		LgbmUpdateInterval: updater.LgbmUpdateInterval(),
@@ -414,6 +415,7 @@ func updateGeneral(general *config.General, logging bool) {
 
 	keepalive.SetKeepAliveIdle(time.Duration(general.KeepAliveIdle) * time.Second)
 	keepalive.SetKeepAliveInterval(time.Duration(general.KeepAliveInterval) * time.Second)
+	keepalive.SetKeepAliveCount(general.KeepAliveCount)
 	keepalive.SetDisableKeepAlive(general.DisableKeepAlive)
 
 	C.SocksPreferHost.Store(general.SocksPreferHost)
