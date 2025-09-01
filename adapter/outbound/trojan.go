@@ -41,6 +41,7 @@ type TrojanOption struct {
 	Server            string         `proxy:"server"`
 	Port              int            `proxy:"port"`
 	Password          string         `proxy:"password"`
+	TLS               *bool          `proxy:"tls,omitempty"`
 	ALPN              []string       `proxy:"alpn,omitempty"`
 	SNI               string         `proxy:"sni,omitempty"`
 	SkipCertVerify    bool           `proxy:"skip-cert-verify,omitempty"`
@@ -82,35 +83,43 @@ func (t *Trojan) StreamConnContext(ctx context.Context, c net.Conn, metadata *C.
 			Headers:                  http.Header{},
 		}
 
-		if t.option.SNI != "" {
-			wsOpts.Host = t.option.SNI
-		}
-
 		if len(t.option.WSOpts.Headers) != 0 {
 			for key, value := range t.option.WSOpts.Headers {
 				wsOpts.Headers.Add(key, value)
 			}
 		}
 
-		alpn := trojan.DefaultWebsocketALPN
-		if t.option.ALPN != nil { // structure's Decode will ensure value not nil when input has value even it was set an empty array
-			alpn = t.option.ALPN
-		}
+		if t.option.TLS == nil || *t.option.TLS {
+			alpn := trojan.DefaultWebsocketALPN
+			if t.option.ALPN != nil { // structure's Decode will ensure value not nil when input has value even it was set an empty array
+				alpn = t.option.ALPN
+			}
 
-		wsOpts.TLS = true
-		wsOpts.TLSConfig, err = ca.GetTLSConfig(ca.Option{
-			TLSConfig: &tls.Config{
-				NextProtos:         alpn,
-				MinVersion:         tls.VersionTLS12,
-				InsecureSkipVerify: t.option.SkipCertVerify,
-				ServerName:         t.option.SNI,
-			},
-			Fingerprint: t.option.Fingerprint,
-			Certificate: t.option.Certificate,
-			PrivateKey:  t.option.PrivateKey,
-		})
-		if err != nil {
-			return nil, err
+			wsOpts.TLS = true
+			wsOpts.TLSConfig, err = ca.GetTLSConfig(ca.Option{
+				TLSConfig: &tls.Config{
+					NextProtos:         alpn,
+					MinVersion:         tls.VersionTLS12,
+					InsecureSkipVerify: t.option.SkipCertVerify,
+					ServerName:         host,
+				},
+				Fingerprint: t.option.Fingerprint,
+				Certificate: t.option.Certificate,
+				PrivateKey:  t.option.PrivateKey,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			if t.option.SNI != "" {
+				wsOpts.TLSConfig.ServerName = t.option.SNI
+			} else if host := wsOpts.Headers.Get("Host"); host != "" {
+				wsOpts.TLSConfig.ServerName = host
+			}
+		} else {
+			if host := wsOpts.Headers.Get("Host"); host != "" {
+				wsOpts.Host = host
+			}
 		}
 
 		c, err = vmess.StreamWebsocketConn(ctx, c, wsOpts)
