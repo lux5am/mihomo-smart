@@ -141,6 +141,7 @@ func GetGeneral() *config.General {
 			Port:              ports.Port,
 			SocksPort:         ports.SocksPort,
 			RedirPort:         ports.RedirPort,
+			RedirUDP:          ports.RedirUDP,
 			TProxyPort:        ports.TProxyPort,
 			MixedPort:         ports.MixedPort,
 			Tun:               listener.GetTunConf(),
@@ -206,7 +207,7 @@ func updateListeners(general *config.General, listeners map[string]C.InboundList
 	listener.SetBindAddress(bindAddress)
 	listener.ReCreateHTTP(general.Port, tunnel.Tunnel)
 	listener.ReCreateSocks(general.SocksPort, tunnel.Tunnel)
-	listener.ReCreateRedir(general.RedirPort, tunnel.Tunnel)
+	listener.ReCreateRedir(general.RedirPort, general.RedirUDP, tunnel.Tunnel)
 	listener.ReCreateTProxy(general.TProxyPort, tunnel.Tunnel)
 	listener.ReCreateMixed(general.MixedPort, tunnel.Tunnel)
 	listener.ReCreateShadowSocks(general.ShadowSocksConfig, tunnel.Tunnel)

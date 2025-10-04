@@ -68,6 +68,7 @@ type Ports struct {
 	Port              int    `json:"port"`
 	SocksPort         int    `json:"socks-port"`
 	RedirPort         int    `json:"redir-port"`
+	RedirUDP          bool   `json:"redir-udp"`
 	TProxyPort        int    `json:"tproxy-port"`
 	MixedPort         int    `json:"mixed-port"`
 	ShadowSocksConfig string `json:"ss-config"`
@@ -197,7 +198,7 @@ func ReCreateSocks(port int, tunnel C.Tunnel) {
 	log.Infoln("SOCKS proxy listening at: %s", socksListener.Address())
 }
 
-func ReCreateRedir(port int, tunnel C.Tunnel) {
+func ReCreateRedir(port int, udp bool, tunnel C.Tunnel) {
 	redirMux.Lock()
 	defer redirMux.Unlock()
 
@@ -209,6 +210,11 @@ func ReCreateRedir(port int, tunnel C.Tunnel) {
 	}()
 
 	addr := genAddr(bindAddress, port, allowLan)
+
+	if !udp && redirUDPListener != nil {
+		redirUDPListener.Close()
+		redirUDPListener = nil
+	}
 
 	if redirListener != nil {
 		if redirListener.RawAddress() == addr {
@@ -235,9 +241,11 @@ func ReCreateRedir(port int, tunnel C.Tunnel) {
 		return
 	}
 
-	redirUDPListener, err = tproxy.NewUDP(addr, tunnel)
-	if err != nil {
-		log.Warnln("Failed to start Redir UDP Listener: %s", err)
+	if udp {
+		redirUDPListener, err = tproxy.NewUDP(addr, tunnel)
+		if err != nil {
+			log.Warnln("Failed to start Redir UDP Listener: %s", err)
+		}
 	}
 
 	log.Infoln("Redirect proxy listening at: %s", redirListener.Address())
@@ -673,6 +681,10 @@ func GetPorts() *Ports {
 		_, portStr, _ := net.SplitHostPort(redirListener.Address())
 		port, _ := strconv.Atoi(portStr)
 		ports.RedirPort = port
+	}
+
+	if redirUDPListener != nil {
+		ports.RedirUDP = true
 	}
 
 	if tproxyListener != nil {

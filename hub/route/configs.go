@@ -37,6 +37,7 @@ type configSchema struct {
 	Port              *int                     `json:"port"`
 	SocksPort         *int                     `json:"socks-port"`
 	RedirPort         *int                     `json:"redir-port"`
+	RedirUDP          *bool                    `json:"redir-udp"`
 	TProxyPort        *int                     `json:"tproxy-port"`
 	MixedPort         *int                     `json:"mixed-port"`
 	Tun               *tunSchema               `json:"tun"`
@@ -361,7 +362,7 @@ func patchConfigs(w http.ResponseWriter, r *http.Request) {
 
 	listener.ReCreateHTTP(pointerOrDefault(general.Port, ports.Port), tunnel.Tunnel)
 	listener.ReCreateSocks(pointerOrDefault(general.SocksPort, ports.SocksPort), tunnel.Tunnel)
-	listener.ReCreateRedir(pointerOrDefault(general.RedirPort, ports.RedirPort), tunnel.Tunnel)
+	listener.ReCreateRedir(pointerOrDefault(general.RedirPort, ports.RedirPort), pointerOrDefault(general.RedirUDP, ports.RedirUDP), tunnel.Tunnel)
 	listener.ReCreateTProxy(pointerOrDefault(general.TProxyPort, ports.TProxyPort), tunnel.Tunnel)
 	listener.ReCreateMixed(pointerOrDefault(general.MixedPort, ports.MixedPort), tunnel.Tunnel)
 	listener.ReCreateTun(pointerOrDefaultTun(general.Tun, listener.LastTunConf), tunnel.Tunnel)
