@@ -165,6 +165,7 @@ type EnhancerConfig struct {
 	FakeIPPool6   *fakeip.Pool
 	FakeIPSkipper *fakeip.Skipper
 	FakeIPTTL     int
+	MaxSize       int
 	UseHosts      bool
 }
 
@@ -185,7 +186,11 @@ func NewEnhancer(cfg EnhancerConfig) *ResolverEnhancer {
 		if e.fakeIPTTL < 1 {
 			e.fakeIPTTL = 1
 		}
-		e.mapping = lru.New(lru.WithSize[netip.Addr, string](4096))
+		maxSize := cfg.MaxSize
+		if maxSize < 1024 {
+			maxSize = 1024
+		}
+		e.mapping = lru.New(lru.WithSize[netip.Addr, string](maxSize))
 	}
 
 	return e
