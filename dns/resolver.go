@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/metacubex/mihomo/common/arc"
@@ -25,9 +26,88 @@ type dnsClient interface {
 	ResetConnection()
 }
 
+type dnsAnswer struct {
+	mu  sync.Mutex
+	rra []D.RR
+	rr4 []D.RR
+	rr6 []D.RR
+}
+
+func (rs *dnsAnswer) RoundRobin() []D.RR {
+	answer := make([]D.RR, 0, len(rs.rra)+len(rs.rr4)+len(rs.rr6))
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if len(rs.rr4) > 0 {
+		rr4 := make([]D.RR, 0, len(rs.rr4))
+		rr4 = append(rr4, rs.rr4[len(rs.rr4)-1])
+		if len(rs.rr4) > 1 {
+			rr4 = append(rr4, rs.rr4[:len(rs.rr4)-1]...)
+		}
+		rs.rr4 = rr4
+	}
+	if len(rs.rr6) > 0 {
+		rr6 := make([]D.RR, 0, len(rs.rr6))
+		rr6 = append(rr6, rs.rr6[len(rs.rr6)-1])
+		if len(rs.rr6) > 1 {
+			rr6 = append(rr6, rs.rr6[:len(rs.rr6)-1]...)
+		}
+		rs.rr6 = rr6
+	}
+	for _, recordList := range [][]D.RR{rs.rra, rs.rr4, rs.rr6} {
+		for _, record := range recordList {
+			answer = append(answer, D.Copy(record))
+		}
+	}
+	return answer
+}
+
+type dnsMsg struct {
+	msg *D.Msg
+	rrs *dnsAnswer
+}
+
+func newDnsMsg(msg *D.Msg, cacheRoundRobin bool) *dnsMsg {
+	dMsg := &dnsMsg{msg: msg.Copy()}
+	if !cacheRoundRobin {
+		return dMsg
+	}
+	var (
+		rra []D.RR
+		rr4 []D.RR
+		rr6 []D.RR
+	)
+	for _, ans := range msg.Answer {
+		switch a := ans.(type) {
+		case *D.A:
+			rr4 = append(rr4, a)
+		case *D.AAAA:
+			rr6 = append(rr6, a)
+		default:
+			rra = append(rra, a)
+		}
+	}
+	if len(rr4) > 1 || len(rr6) > 1 {
+		dMsg.msg.Answer = nil
+		dMsg.rrs = &dnsAnswer{
+			rra: rra,
+			rr4: rr4,
+			rr6: rr6,
+		}
+	}
+	return dMsg
+}
+
+func (dm *dnsMsg) Copy() *D.Msg {
+	msg := dm.msg.Copy()
+	if dm.rrs != nil {
+		msg.Answer = dm.rrs.RoundRobin()
+	}
+	return msg
+}
+
 type dnsCache interface {
-	GetWithExpire(key string) (*D.Msg, time.Time, bool)
-	SetWithExpire(key string, value *D.Msg, expire time.Time)
+	GetWithExpire(key string) (*dnsMsg, time.Time, bool)
+	SetWithExpire(key string, value *dnsMsg, expire time.Time)
 	Clear()
 }
 
@@ -49,6 +129,7 @@ type Resolver struct {
 	cacheMinTTL           uint32
 	cacheMaxTTL           uint32
 	cacheRewriteTTL       bool
+	cacheRoundRobin       bool
 	policy                []dnsPolicy
 	defaultResolver       *Resolver
 }
@@ -218,9 +299,9 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 							}
 						}
 					}
-					putMsgToCache(r.cache, q, resultCopy)
+					putMsgToCache(r.cache, q, resultCopy, r.cacheRoundRobin)
 				} else {
-					putMsgToCache(r.cache, q, result)
+					putMsgToCache(r.cache, q, result, r.cacheRoundRobin)
 				}
 			}
 		}()
@@ -477,6 +558,7 @@ type Config struct {
 	CacheMaxSize         int
 	CacheMinTTL          uint32
 	CacheMaxTTL          uint32
+	CacheRoundRobin      bool
 }
 
 func (config Config) newCache() dnsCache {
@@ -485,9 +567,9 @@ func (config Config) newCache() dnsCache {
 	}
 	switch config.CacheAlgorithm {
 	case "arc":
-		return arc.New(arc.WithSize[string, *D.Msg](config.CacheMaxSize))
+		return arc.New(arc.WithSize[string, *dnsMsg](config.CacheMaxSize))
 	default:
-		return lru.New(lru.WithSize[string, *D.Msg](config.CacheMaxSize), lru.WithStale[string, *D.Msg](true))
+		return lru.New(lru.WithSize[string, *dnsMsg](config.CacheMaxSize), lru.WithStale[string, *dnsMsg](true))
 	}
 }
 
@@ -513,6 +595,7 @@ func (r *Resolver) applyConfig(config Config) {
 	r.cacheMinTTL = config.CacheMinTTL
 	r.cacheMaxTTL = config.CacheMaxTTL
 	r.cacheRewriteTTL = config.CacheMinTTL > 0 || config.CacheMaxTTL > 0
+	r.cacheRoundRobin = config.CacheRoundRobin
 }
 
 func NewResolverFromClient(client dnsClient) *Resolver {

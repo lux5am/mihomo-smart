@@ -48,16 +48,17 @@ func updateTTL(records []D.RR, ttl uint32) {
 // getMsgFromCache returns a cached dns message if it exists, otherwise returns nil.
 // the returned msg is a copy of the original msg, so it can be modified without affecting the original msg.
 func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
-	msg, expireTime, hit := c.GetWithExpire(q.String())
-	if msg != nil {
-		msg = msg.Copy() // never modify the original msg
+	cacheM, expireTime, hit := c.GetWithExpire(q.String())
+	var msg *D.Msg
+	if cacheM != nil {
+		msg = cacheM.Copy() // never modify the original msg
 	}
 	return msg, expireTime, hit
 }
 
 // putMsgToCache puts a dns message into the cache.
 // the msg is copied before being stored in the cache, so it can be modified without affecting the original msg.
-func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
+func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg, cacheRoundRobin bool) {
 	// skip dns cache for acme challenge
 	if q.Qtype == D.TypeTXT && strings.HasPrefix(q.Name, "_acme-challenge.") {
 		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", q.Name)
@@ -83,7 +84,7 @@ func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg) {
 		return
 	}
 
-	c.SetWithExpire(q.String(), msg, time.Now().Add(time.Duration(ttl)*time.Second))
+	c.SetWithExpire(q.String(), newDnsMsg(msg, cacheRoundRobin), time.Now().Add(time.Duration(ttl)*time.Second))
 }
 
 func setMsgTTL(msg *D.Msg, ttl uint32) {
