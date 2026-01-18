@@ -47,6 +47,7 @@ type baseProvider struct {
 	mutex       sync.RWMutex
 	name        string
 	proxies     []C.Proxy
+	proxiesName map[string]C.Proxy
 	healthCheck *HealthCheck
 	version     uint32
 }
@@ -82,6 +83,15 @@ func (bp *baseProvider) Proxies() []C.Proxy {
 	return bp.proxies
 }
 
+func (bp *baseProvider) ProxyByName(name string) C.Proxy {
+	bp.mutex.RLock()
+	defer bp.mutex.RUnlock()
+	if proxy, exists := bp.proxiesName[name]; exists {
+		return proxy
+	}
+	return nil
+}
+
 func (bp *baseProvider) Count() int {
 	bp.mutex.RLock()
 	defer bp.mutex.RUnlock()
@@ -104,6 +114,10 @@ func (bp *baseProvider) setProxies(proxies []C.Proxy) {
 	bp.mutex.Lock()
 	defer bp.mutex.Unlock()
 	bp.proxies = proxies
+	bp.proxiesName = make(map[string]C.Proxy)
+	for _, proxy := range proxies {
+		bp.proxiesName[proxy.Name()] = proxy
+	}
 	bp.version += 1
 	bp.healthCheck.setProxies(proxies)
 	if bp.healthCheck.auto() {
