@@ -330,6 +330,7 @@ func NewTrojan(option TrojanOption) (*Trojan, error) {
 			UserAgent:    option.GrpcOpts.GrpcUserAgent,
 			Host:         option.SNI,
 			PingInterval: option.GrpcOpts.PingInterval,
+			PingTimeout:  option.GrpcOpts.PingTimeout,
 		}
 
 		t.gunClient = gun.NewClient(

@@ -147,6 +147,7 @@ type GrpcOptions struct {
 	GrpcServiceName string `proxy:"grpc-service-name,omitempty"`
 	GrpcUserAgent   string `proxy:"grpc-user-agent,omitempty"`
 	PingInterval    int    `proxy:"ping-interval,omitempty"`
+	PingTimeout     int    `proxy:"ping-timeout,omitempty"`
 	MaxConnections  int    `proxy:"max-connections,omitempty"`
 	MinStreams      int    `proxy:"min-streams,omitempty"`
 	MaxStreams      int    `proxy:"max-streams,omitempty"`
@@ -529,6 +530,7 @@ func NewVmess(option VmessOption) (*Vmess, error) {
 			UserAgent:    option.GrpcOpts.GrpcUserAgent,
 			Host:         option.ServerName,
 			PingInterval: option.GrpcOpts.PingInterval,
+			PingTimeout:  option.GrpcOpts.PingTimeout,
 		}
 		if option.ServerName == "" {
 			gunConfig.Host = v.addr
