@@ -58,7 +58,7 @@ func getMsgFromCache(c dnsCache, q D.Question) (*D.Msg, time.Time, bool) {
 
 // putMsgToCache puts a dns message into the cache.
 // the msg is copied before being stored in the cache, so it can be modified without affecting the original msg.
-func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg, cacheRoundRobin bool) {
+func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg, resolver *Resolver) {
 	// skip dns cache for acme challenge
 	if q.Qtype == D.TypeTXT && strings.HasPrefix(q.Name, "_acme-challenge.") {
 		log.Debugln("[DNS] dns cache ignored because of acme challenge for: %s", q.Name)
@@ -84,7 +84,30 @@ func putMsgToCache(c dnsCache, q D.Question, msg *D.Msg, cacheRoundRobin bool) {
 		return
 	}
 
-	c.SetWithExpire(q.String(), newDnsMsg(msg, cacheRoundRobin), time.Now().Add(time.Duration(ttl)*time.Second))
+	expire := time.Now().Add(time.Duration(ttl)*time.Second)
+	dm := newDnsMsg(msg, resolver.cacheRoundRobin)
+	if resolver.cacheOptimistic {
+		dm.SetExpire(expire)
+		expire = expire.Add(time.Duration(resolver.cacheOptimisticTTL)*time.Second)
+	}
+	c.SetWithExpire(q.String(), dm, expire)
+}
+
+func addMsgStaleAnswerOpt(msg *D.Msg) {
+	opt := msg.IsEdns0()
+	if opt == nil {
+		opt = &D.OPT{
+			Hdr: D.RR_Header{
+				Name:   ".",
+				Rrtype: D.TypeOPT,
+			},
+		}
+		opt.SetUDPSize(4096) // Default UDP size
+		msg.Extra = append(msg.Extra, opt)
+	}
+	opt.Option = append(opt.Option, &D.EDNS0_EDE{
+		InfoCode: D.ExtendedErrorCodeStaleAnswer,
+	})
 }
 
 func setMsgTTL(msg *D.Msg, ttl uint32) {

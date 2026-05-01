@@ -62,8 +62,17 @@ func (rs *dnsAnswer) RoundRobin() []D.RR {
 }
 
 type dnsMsg struct {
-	msg *D.Msg
-	rrs *dnsAnswer
+	msg      *D.Msg
+	rrs      *dnsAnswer
+	expire   int64
+}
+
+func (d *dnsMsg) GetExpire() time.Time {
+	return time.Unix(d.expire, 0)
+}
+
+func (d *dnsMsg) SetExpire(expire time.Time) {
+	d.expire = expire.Unix()
 }
 
 func newDnsMsg(msg *D.Msg, cacheRoundRobin bool) *dnsMsg {
@@ -128,10 +137,13 @@ type Resolver struct {
 	cache                 dnsCache
 	cacheMinTTL           uint32
 	cacheMaxTTL           uint32
+	cacheOptimistic       bool
+	cacheOptimisticTTL    uint32
 	cacheRewriteTTL       bool
 	cacheRoundRobin       bool
 	policy                []dnsPolicy
 	defaultResolver       *Resolver
+	cacheUpdating         sync.Map
 }
 
 func (r *Resolver) LookupIPPrimaryIPv4(ctx context.Context, host string) (ips []netip.Addr, err error) {
@@ -238,9 +250,11 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 		return nil, errors.New("should have one question at least")
 	}
 	continueFetch := false
+	q := m.Question[0].String()
 	defer func() {
 		if continueFetch || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			go func() {
+				defer r.cacheUpdating.Delete(q)
 				ctx, cancel := context.WithTimeout(context.Background(), resolver.DefaultDNSTimeout)
 				defer cancel()
 				_, _ = r.exchangeWithoutCache(ctx, m) // ignore result, just for putMsgToCache
@@ -248,20 +262,29 @@ func (r *Resolver) ExchangeContext(ctx context.Context, m *D.Msg) (msg *D.Msg, e
 		}
 	}()
 
-	q := m.Question[0]
 	domain := msgToDomain(m)
-	msg, expireTime, hit := getMsgFromCache(r.cache, q)
+	cacheM, expireTime, hit := r.cache.GetWithExpire(q)
 	if hit {
+		msg = cacheM.Copy()
 		log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
 		now := time.Now()
-		if expireTime.Before(now) {
-			setMsgTTL(msg, uint32(1)) // Continue fetch
-			continueFetch = true
-		} else {
+		if expireTime.After(now) {
+			if r.cacheOptimistic {
+				expireTime = cacheM.GetExpire()
+			}
+			log.Debugln("[DNS] cache hit %s --> %s, expire at %s", domain, msgToLogString(msg), expireTime.Format("2006-01-02 15:04:05"))
+			if r.cacheOptimistic && expireTime.Before(now) {
+				addMsgStaleAnswerOpt(msg)
+				setMsgTTL(msg, uint32(1))
+				if _, loaded := r.cacheUpdating.LoadOrStore(q, struct{}{}); !loaded {
+					continueFetch = true
+				}
+				return
+			}
 			// updating TTL by subtracting common delta time from each DNS record
 			updateMsgTTL(msg, uint32(time.Until(expireTime).Seconds()))
+			return
 		}
-		return
 	}
 	return r.exchangeWithoutCache(ctx, m)
 }
@@ -299,9 +322,9 @@ func (r *Resolver) exchangeWithoutCache(ctx context.Context, m *D.Msg) (msg *D.M
 							}
 						}
 					}
-					putMsgToCache(r.cache, q, resultCopy, r.cacheRoundRobin)
+					putMsgToCache(r.cache, q, resultCopy, r)
 				} else {
-					putMsgToCache(r.cache, q, result, r.cacheRoundRobin)
+					putMsgToCache(r.cache, q, result, r)
 				}
 			}
 		}()
@@ -558,6 +581,8 @@ type Config struct {
 	CacheMaxSize         int
 	CacheMinTTL          uint32
 	CacheMaxTTL          uint32
+	CacheOptimistic      bool
+	CacheOptimisticTTL   uint32
 	CacheRoundRobin      bool
 }
 
@@ -596,6 +621,11 @@ func (r *Resolver) applyConfig(config Config) {
 	r.cacheMaxTTL = config.CacheMaxTTL
 	r.cacheRewriteTTL = config.CacheMinTTL > 0 || config.CacheMaxTTL > 0
 	r.cacheRoundRobin = config.CacheRoundRobin
+	r.cacheOptimistic = config.CacheOptimistic
+	r.cacheOptimisticTTL = config.CacheOptimisticTTL
+	if r.cacheOptimisticTTL == 0 {
+		r.cacheOptimisticTTL = ^uint32(0)
+	}
 }
 
 func NewResolverFromClient(client dnsClient) *Resolver {

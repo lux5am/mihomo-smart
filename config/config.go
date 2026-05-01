@@ -173,6 +173,8 @@ type DNS struct {
 	CacheMaxSize          int
 	CacheMinTTL           uint32
 	CacheMaxTTL           uint32
+	CacheOptimistic       bool
+	CacheOptimisticTTL    uint32
 	CacheRoundRobin       bool
 	FakeIPRange           netip.Prefix
 	FakeIPPool            *fakeip.Pool
@@ -256,6 +258,8 @@ type RawDNS struct {
 	CacheMaxSize                 int                                 `yaml:"cache-max-size" json:"cache-max-size"`
 	CacheMinTTL                  uint32                              `yaml:"cache-min-ttl" json:"cache-min-ttl"`
 	CacheMaxTTL                  uint32                              `yaml:"cache-max-ttl" json:"cache-max-ttl"`
+	CacheOptimistic              bool                                `yaml:"cache-optimistic" json:"cache-optimistic"`
+	CacheOptimisticTTL           uint32                              `yaml:"cache-optimistic-ttl" json:"cache-optimistic-ttl"`
 	CacheRoundRobin              bool                                `yaml:"cache-round-robin" json:"cache-round-robin"`
 	NameServerPolicy             *orderedmap.OrderedMap[string, any] `yaml:"nameserver-policy" json:"nameserver-policy"`
 	ProxyServerNameserver        []string                            `yaml:"proxy-server-nameserver" json:"proxy-server-nameserver"`
@@ -556,6 +560,7 @@ func DefaultRawConfig() *RawConfig {
 				"www.msftconnecttest.com",
 			},
 			FakeIPFilterMode: C.FilterBlackList,
+			CacheOptimistic:  true,
 		},
 		NTP: RawNTP{
 			Enable:        false,
@@ -1460,6 +1465,9 @@ func parseDNS(rawCfg *RawConfig, ruleProviders map[string]P.RuleProvider) (*DNS,
 		CacheMinTTL:       cfg.CacheMinTTL,
 		CacheMaxTTL:       cfg.CacheMaxTTL,
 		CacheRoundRobin:   cfg.CacheRoundRobin,
+
+		CacheOptimistic:    cfg.CacheOptimistic,
+		CacheOptimisticTTL: cfg.CacheOptimisticTTL,
 	}
 	var err error
 	if dnsCfg.NameServer, err = parseNameServer(cfg.NameServer, cfg.RespectRules, cfg.PreferH3); err != nil {
